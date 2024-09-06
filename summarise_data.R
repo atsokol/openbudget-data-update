@@ -1,6 +1,7 @@
 library(readr)
 library(dplyr)
 library(tidyr)
+library(lubridate)
 
 # Load categories
 categories <- read_csv("inputs/budget_categories.csv")
