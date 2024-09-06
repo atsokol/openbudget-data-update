@@ -1,7 +1,7 @@
 library(readr)
 library(dplyr)
 
-
+# Load categories
 categories <- read_csv("inputs/budget_categories.csv")
 
 inc_categ <- categories |>
