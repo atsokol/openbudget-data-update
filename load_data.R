@@ -10,7 +10,7 @@ source("download.R")
 
 city_codes <- read_csv("inputs/city_codes.csv")
 
-cities <- c("Lviv", "Kyiv")
+cities <- city_codes |> filter(city != "R_Vinnitsia") |> pull(city) |> unique()
 codes <- city_codes |> filter(city %in% cities) |> pull(value)
 
 # Download data
