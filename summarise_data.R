@@ -19,7 +19,7 @@ inc_agg <- incomes |>
                     labels = c(inc_categ$NAME_TYPE))
   ) |>
   filter(FUND_TYP == "T", TYPE %in% c("Tax", "Non-tax", "Transfers")) |>
-  group_by(CITY, REP_PERIOD, TYPE) |>
+  group_by(CITY, REP_PERIOD) |>
   summarise(income = sum(FAKT_AMT) / 10^6)
 
 exp_agg <- expenses |>
