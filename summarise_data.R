@@ -24,6 +24,15 @@ inc_agg <- incomes |>
   group_by(CITY, REP_PERIOD) |>
   summarise(income = sum(FAKT_AMT) / 10^6)
 
+core_inc_agg <- incomes |>
+  mutate(TYPE = cut(COD_INCO,
+                    breaks = c(0,inc_categ$BREAK_END),
+                    labels = c(inc_categ$NAME_TYPE))
+  ) |>
+  filter(FUND_TYP == "T", TYPE %in% c("Tax", "Non-tax")) |>
+  group_by(CITY, REP_PERIOD) |>
+  summarise(core_income = sum(FAKT_AMT) / 10^6)
+
 exp_agg <- expenses |>
   mutate(TYPE = cut(COD_CONS_EK,
                     breaks = c(0,exp_categ$BREAK_END),
@@ -36,6 +45,8 @@ exp_agg <- expenses |>
 op_surplus <- left_join(inc_agg,
                         exp_agg,
                         by = join_by(CITY == CITY, REP_PERIOD == REP_PERIOD)) |>
+  left_join(core_inc_agg,
+            by = join_by(CITY == CITY, REP_PERIOD == REP_PERIOD))
   mutate(op_surplus = income - expense)
 
 write_csv(op_surplus, "data/data_analysis.csv")
