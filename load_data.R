@@ -24,3 +24,5 @@ write_csv(data[[3]] |> left_join(city_codes, join_by(COD_BUDGET == value)) |> re
           "data/debts.csv")
 write_csv(data[[4]] |> left_join(city_codes, join_by(COD_BUDGET == value)) |> rename(CITY = city),
           "data/incomes.csv")
+
+#Test
