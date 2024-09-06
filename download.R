@@ -60,7 +60,6 @@ download_data <- function(BUDGETCODE, YEAR) {
   df_api <- var_types |>
     group_by(budgetItem, classificationType) |>
     summarise(col_type = paste(colType, collapse = ""), .groups = "drop") |>
-    mutate(across(everything(), str_trim)) |>  # trim white space in category names
     expand_grid(budgetCode = BUDGETCODE, year = YEAR) |>
     rowwise() |>
     mutate(api_path = api_construct(budgetCode, budgetItem, classificationType, year))
