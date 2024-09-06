@@ -5,7 +5,7 @@ library(purrr)
 library(httr)
 library(jsonlite)
 
-source("R code/download.R")
+source("download.R")
 
 city_codes <- read_csv("inputs/city_codes.csv")
 
