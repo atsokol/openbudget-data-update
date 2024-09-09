@@ -46,7 +46,7 @@ op_surplus <- left_join(inc_agg,
                         exp_agg,
                         by = join_by(CITY == CITY, REP_PERIOD == REP_PERIOD)) |>
   left_join(core_inc_agg,
-            by = join_by(CITY == CITY, REP_PERIOD == REP_PERIOD))
+            by = join_by(CITY == CITY, REP_PERIOD == REP_PERIOD)) |>
   mutate(op_surplus = income - expense)
 
 write_csv(op_surplus, "data/data_analysis.csv")
