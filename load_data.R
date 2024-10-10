@@ -22,12 +22,8 @@ write_csv(data[[1]] |> left_join(city_codes, join_by(COD_BUDGET == value)) |> re
 write_csv(data[[2]] |> left_join(city_codes, join_by(COD_BUDGET == value)) |> rename(CITY = city),
           "data/expenses.csv")
 write_csv(data[[3]] |> left_join(city_codes, join_by(COD_BUDGET == value)) |> rename(CITY = city),
-          "data/expenses_functional.csv")
-write_csv(data[[4]] |> left_join(city_codes, join_by(COD_BUDGET == value)) |> rename(CITY = city),
-          "data/expenses_program.csv")
-write_csv(data[[5]] |> left_join(city_codes, join_by(COD_BUDGET == value)) |> rename(CITY = city),
           "data/debts.csv")
-write_csv(data[[6]] |> left_join(city_codes, join_by(COD_BUDGET == value)) |> rename(CITY = city),
+write_csv(data[[4]] |> left_join(city_codes, join_by(COD_BUDGET == value)) |> rename(CITY = city),
           "data/incomes.csv")
 
 #Test
