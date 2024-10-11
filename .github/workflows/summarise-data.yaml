@@ -20,6 +20,7 @@ jobs:
             any::dplyr
             any::purrr
             any::lubridate
+            any::duckdb
 
       - name: Check out repository
         uses: actions/checkout@v3
