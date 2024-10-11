@@ -2,6 +2,7 @@ library(readr)
 library(dplyr)
 library(tidyr)
 library(lubridate)
+library(duckdb)
 
 # Load categories
 categories <- read_csv("inputs/budget_categories.csv")
@@ -12,8 +13,10 @@ inc_categ <- categories |>
 exp_categ <- categories |>
   filter(CATEG=="EXP")
 
-incomes <- read_csv("data/incomes.csv")
-expenses <- read_csv("data/expenses.csv")
+con <- dbConnect("data/openbudget_v2.duckdb")
+
+incomes <- tbl(con, "incomes") |> collect()
+expenses <- tbl(con, "expenses") |> collect()
 
 inc_agg <- incomes |>
   mutate(TYPE = cut(COD_INCO,
