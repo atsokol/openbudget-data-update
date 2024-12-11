@@ -1,6 +1,9 @@
 on:
   workflow_dispatch:
 
+  schedule:
+    - cron: '0 10 * * 0'
+
 jobs:
   import-data:
     runs-on: ubuntu-latest
