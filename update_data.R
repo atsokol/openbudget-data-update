@@ -10,7 +10,7 @@ source("download.R")
 
 city_codes <- read_csv("inputs/city_codes.csv")
 
-cities <- city_codes |> filter(city != "R_Vinnitsia") |> pull(city) |> unique()
+cities <- city_codes |> pull(city) |> unique()
 codes <- city_codes |> filter(city %in% cities) |> pull(value)
 
 # Helper function to safely download data with retry on connection reset
@@ -70,16 +70,15 @@ if (current_year == latest_year && current_month == latest_month) {
     data <- safe_download_data(codes, years_to_update)
 
     # Function to update data files
-    data_update <- function(file, dat) {
+    data_update <- function(file, data) {
       existing_data <- read_csv(file)
 
-      new_data <- dat |>
+      new_data <- data |>
         left_join(city_codes, join_by(COD_BUDGET == value)) |>
         rename(CITY = city)
 
       data_no_overlap <- existing_data |>
-        filter(!REP_PERIOD %in% new_data$REP_PERIOD) |>
-        filter(!COD_BUDGET %in% new_data$COD_BUDGET)
+        filter(!REP_PERIOD %in% unique(new_data$REP_PERIOD))
 
       data_updated <- rbind(data_no_overlap, new_data)
 

@@ -10,12 +10,31 @@ source("download.R")
 
 city_codes <- read_csv("inputs/city_codes.csv")
 
-cities <- city_codes |> filter(city != "R_Vinnitsia") |> pull(city) |> unique()
+cities <- city_codes |> pull(city) |> unique()
 codes <- city_codes |> filter(city %in% cities) |> pull(value)
+
+# Helper function to safely download data with retry on connection reset
+safe_download_data <- function(codes, periods, max_retries = 5) {
+  attempt <- 1
+  while (attempt <= max_retries) {
+    result <- tryCatch(
+      {
+        download_data(codes, periods)
+      },
+      error = function(e) {
+        attempt <- attempt + 1
+        Sys.sleep(2) # brief pause before retry
+        return(NULL)
+      }
+    )
+    if (!is.null(result)) return(result)
+  }
+  stop("Failed to download data.")
+}
 
 # Download data
 current_year <- year(Sys.Date())
-data <- download_data(codes, seq(2021, current_year))
+data <- safe_download_data(codes, seq(2021, current_year))
 
 write_csv(data[[1]] |> left_join(city_codes, join_by(COD_BUDGET == value)) |> rename(CITY = city),
           "data/credits.csv")
