@@ -13,42 +13,95 @@ city_codes <- read_csv("inputs/city_codes.csv")
 cities <- city_codes |> filter(city != "R_Vinnitsia") |> pull(city) |> unique()
 codes <- city_codes |> filter(city %in% cities) |> pull(value)
 
+# Helper function to safely download data with retry on connection reset
+safe_download_data <- function(codes, periods, max_retries = 5) {
+  attempt <- 1
+  while (attempt <= max_retries) {
+    result <- tryCatch(
+      {
+        download_data(codes, periods)
+      },
+      error = function(e) {
+        if (grepl("connection reset", tolower(e$message))) {
+          message(sprintf("Connection reset error encountered. Retrying (%d/%d)...", attempt, max_retries))
+          attempt <<- attempt + 1
+          Sys.sleep(2) # brief pause before retry
+          return(NULL)
+        } else {
+          stop(e)
+        }
+      }
+    )
+    if (!is.null(result)) return(result)
+  }
+  stop("Failed to download data after retries due to connection reset errors.")
+}
+
 # Download data
-current_year <- year(Sys.Date())
+current_date <- Sys.Date()
+current_year <- year(current_date)
+current_month <- month(current_date)
+
 latest_period <- read_csv(
   "data/incomes.csv",
   col_types = cols_only(REP_PERIOD = col_date())
   ) |>
   pull(REP_PERIOD) |>
-  max() |>
-  year()
+  max()
+latest_year <- year(latest_period)
+latest_month <- month(latest_period)
 
-data <- download_data(codes, seq(latest_period, current_year))
+# If current period is the same as latest period, data is up to date
+if (current_year == latest_year && current_month == latest_month) {
+  message("Data is up to date.")
+} else {
+  # Determine years to update (API only allows by year)
+  years_to_update <- integer(0)
+  if (current_year > latest_year) {
+    # New year: update for current year
+    years_to_update <- c(years_to_update, current_year)
+  }
+  if (current_year == latest_year && current_month > latest_month) {
+    # Same year, new months: update for current year
+    years_to_update <- c(years_to_update, current_year)
+  }
+  if (latest_year == current_year - 1 && latest_month < 12) {
+    # Previous year incomplete, update for previous year
+    years_to_update <- c(years_to_update, latest_year)
+  }
 
-# Function to update data files
-data_update <- function(file, dat) {
-  existing_data <- read_csv(file)
+  if (length(years_to_update) > 0) {
+    years_to_update <- sort(unique(years_to_update))
+    data <- safe_download_data(codes, years_to_update)
 
-  new_data <- dat |>
-    left_join(city_codes, join_by(COD_BUDGET == value)) |>
-    rename(CITY = city)
+    # Function to update data files
+    data_update <- function(file, dat) {
+      existing_data <- read_csv(file)
 
-  data_no_overlap <- existing_data |>
-    filter(!REP_PERIOD %in% new_data$REP_PERIOD) |>
-    filter(!COD_BUDGET %in% new_data$COD_BUDGET)
+      new_data <- dat |>
+        left_join(city_codes, join_by(COD_BUDGET == value)) |>
+        rename(CITY = city)
 
-  data_updated <- rbind(data_no_overlap, new_data)
+      data_no_overlap <- existing_data |>
+        filter(!REP_PERIOD %in% new_data$REP_PERIOD) |>
+        filter(!COD_BUDGET %in% new_data$COD_BUDGET)
 
-  write_csv(data_updated, file)
+      data_updated <- rbind(data_no_overlap, new_data)
+
+      write_csv(data_updated, file)
+    }
+
+    data_update("data/credits.csv", data[[1]])
+    data_update("data/expenses.csv", data[[2]])
+    data_update("data/expenses_functional.csv",
+                data[[3]] |>
+                  group_by(REP_PERIOD, FUND_TYP, COD_BUDGET,
+                           COD_CONS_MB_FK, COD_CONS_MB_FK_NAME) |>
+                  summarise_if(is.numeric, sum, na.rm = TRUE))
+    data_update("data/debts.csv", data[[4]])
+    data_update("data/incomes.csv", data[[5]])
+  } else {
+    message("Data is up to date.")
+  }
 }
-
-data_update("data/credits.csv", data[[1]])
-data_update("data/expenses.csv", data[[2]])
-data_update("data/expenses_functional.csv",
-            data[[3]] |>
-              group_by(REP_PERIOD, FUND_TYP, COD_BUDGET,
-                       COD_CONS_MB_FK, COD_CONS_MB_FK_NAME) |>
-              summarise_if(is.numeric, sum, na.rm = TRUE))
-data_update("data/debts.csv", data[[4]])
-data_update("data/incomes.csv", data[[5]])
 
