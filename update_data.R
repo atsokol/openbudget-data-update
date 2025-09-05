@@ -22,19 +22,14 @@ safe_download_data <- function(codes, periods, max_retries = 5) {
         download_data(codes, periods)
       },
       error = function(e) {
-        if (grepl("connection reset", tolower(e$message))) {
-          message(sprintf("Connection reset error encountered. Retrying (%d/%d)...", attempt, max_retries))
-          attempt <<- attempt + 1
+          attempt <- attempt + 1
           Sys.sleep(2) # brief pause before retry
           return(NULL)
-        } else {
-          stop(e)
-        }
       }
     )
     if (!is.null(result)) return(result)
   }
-  stop("Failed to download data after retries due to connection reset errors.")
+  stop("Failed to download data.")
 }
 
 # Download data
