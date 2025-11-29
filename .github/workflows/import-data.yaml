@@ -1,10 +1,18 @@
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write 
+
 jobs:
   import-data:
     runs-on: ubuntu-latest
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # full history so pull/rebase works
+          
       - name: Set up R
         uses: r-lib/actions/setup-r@v2
 
@@ -30,6 +38,11 @@ jobs:
         run: |
           git config --local user.email "actions@github.com"
           git config --local user.name "GitHub Actions"
+
+          # make sure we're up to date with remote main
+          git fetch origin
+          git pull --rebase origin main
+          
           git add data/*
           git commit -m 'Data updated' || echo "No changes to commit"
           git push origin || echo "No changes to commit"
