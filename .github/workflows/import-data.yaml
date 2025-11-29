@@ -40,9 +40,9 @@ jobs:
           git config --local user.name "GitHub Actions"
 
           # make sure we're up to date with remote main
-          git fetch origin
+          git fetch origin main
           git pull --rebase origin main
           
           git add data/*
           git commit -m 'Data updated' || echo "No changes to commit"
-          git push origin || echo "No changes to commit"
+          git push origin main || echo "No changes to commit"
