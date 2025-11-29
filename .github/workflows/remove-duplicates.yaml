@@ -36,15 +36,18 @@ jobs:
         run: Rscript -e 'source("remove_duplicates.R")'
         # change the file name above if your script is named differently
 
-      - name: Commit cleaned CSVs
+      - name: Commit results
         run: |
           git config --local user.email "actions@github.com"
           git config --local user.name "GitHub Actions"
 
-          # sync with remote main so push isn't rejected
+          # 1) Commit whatever the R script changed
+          git add data/*
+          git commit -m "Data updated" || echo "No changes to commit"
+
+          # 2) Make sure we're up to date with remote main
           git fetch origin main
           git pull --rebase origin main
 
-          git add data/*.csv
-          git commit -m "CSV duplicates removed" || echo "No changes to commit"
-          git push origin main || echo "No changes to commit"
+          # 3) Push our rebased commit to main
+          git push origin main || echo "No changes to push"
