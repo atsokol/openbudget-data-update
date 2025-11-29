@@ -1,0 +1,50 @@
+name: Remove duplicates
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # allow this workflow to push commits
+
+jobs:
+  remove-duplicates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360   # plenty of time if it runs long
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # needed so git pull/rebase works
+
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+
+      - name: Install packages
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            any::readr
+            any::dplyr
+            any::tidyr
+            any::purrr
+            any::lubridate
+            any::httr
+            any::jsonlite
+
+      - name: Run de-duplication script
+        run: Rscript -e 'source("remove_duplicates.R")'
+        # change the file name above if your script is named differently
+
+      - name: Commit cleaned CSVs
+        run: |
+          git config --local user.email "actions@github.com"
+          git config --local user.name "GitHub Actions"
+
+          # sync with remote main so push isn't rejected
+          git fetch origin main
+          git pull --rebase origin main
+
+          git add data/*.csv
+          git commit -m "CSV duplicates removed" || echo "No changes to commit"
+          git push origin main || echo "No changes to commit"
