@@ -85,15 +85,16 @@ if (current_year == latest_year && current_month == latest_month) {
       write_csv(data_updated, file)
     }
 
-    data_update("data/credits.csv", data[[1]])
-    data_update("data/expenses.csv", data[[2]])
+    data_update("data/credits.csv", data[[1]] |> distinct())
+    data_update("data/expenses.csv", data[[2]] |> distinct())
     data_update("data/expenses_functional.csv",
                 data[[3]] |>
+                distinct() |> 
                   group_by(REP_PERIOD, FUND_TYP, COD_BUDGET,
                            COD_CONS_MB_FK, COD_CONS_MB_FK_NAME) |>
                   summarise_if(is.numeric, sum, na.rm = TRUE))
-    data_update("data/debts.csv", data[[4]])
-    data_update("data/incomes.csv", data[[5]])
+    data_update("data/debts.csv", data[[4]] |> distinct())
+    data_update("data/incomes.csv", data[[5]] |> distinct())
   } else {
     message("Data is up to date.")
   }
