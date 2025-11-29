@@ -36,18 +36,19 @@ safe_download_data <- function(codes, periods, max_retries = 5) {
 current_year <- year(Sys.Date())
 data <- safe_download_data(codes, seq(2021, current_year))
 
-write_csv(data[[1]] |> left_join(city_codes, join_by(COD_BUDGET == value)) |> rename(CITY = city),
+write_csv(data[[1]] |> left_join(city_codes, join_by(COD_BUDGET == value)) |> rename(CITY = city) |> distinct(),
           "data/credits.csv")
-write_csv(data[[2]] |> left_join(city_codes, join_by(COD_BUDGET == value)) |> rename(CITY = city),
+write_csv(data[[2]] |> left_join(city_codes, join_by(COD_BUDGET == value)) |> rename(CITY = city) |> distinct(),
           "data/expenses.csv")
 write_csv(data[[3]] |>
       group_by(REP_PERIOD, FUND_TYP, COD_BUDGET, COD_CONS_MB_FK, COD_CONS_MB_FK_NAME) |>
       summarise_if(is.numeric, sum, na.rm = TRUE) |>
       left_join(city_codes, join_by(COD_BUDGET == value)) |>
-      rename(CITY = city),
+      rename(CITY = city) |> 
+      distinct(),
       "data/expenses_functional.csv"
 )
-write_csv(data[[4]] |> left_join(city_codes, join_by(COD_BUDGET == value)) |> rename(CITY = city),
+write_csv(data[[4]] |> left_join(city_codes, join_by(COD_BUDGET == value)) |> rename(CITY = city) |> distinct(),
           "data/debts.csv")
-write_csv(data[[5]] |> left_join(city_codes, join_by(COD_BUDGET == value)) |> rename(CITY = city),
+write_csv(data[[5]] |> left_join(city_codes, join_by(COD_BUDGET == value)) |> rename(CITY = city) |> distinct(),
           "data/incomes.csv")
