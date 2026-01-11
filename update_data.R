@@ -27,8 +27,8 @@ if (nrow(city_codes) == 0) {
 
 # FOR TESTING: Use only first city to speed up execution
 # Comment out this line for production use
-city_codes <- city_codes |> slice(1)
-message(sprintf("TESTING MODE: Using only %s", city_codes$city[1]))
+# city_codes <- city_codes |> slice(1)
+# message(sprintf("TESTING MODE: Using only %s", city_codes$city[1]))
 
 cities <- city_codes |> pull(city) |> unique()
 codes <- city_codes |> filter(city %in% cities) |> pull(value)
