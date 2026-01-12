@@ -27,14 +27,14 @@ if (nrow(city_codes) == 0) {
 
 # FOR TESTING: Use only first city to speed up execution
 # Comment out this line for production use
-# city_codes <- city_codes |> slice(1)
-# message(sprintf("TESTING MODE: Using only %s", city_codes$city[1]))
+city_codes <- city_codes |> slice(1)
+message(sprintf("TESTING MODE: Using only %s", city_codes$city[1]))
 
 cities <- city_codes |> pull(city) |> unique()
 codes <- city_codes |> filter(city %in% cities) |> pull(value)
 
 # Helper function to safely download data with retry on connection reset
-safe_download_data <- function(codes, periods, max_retries = 5) {
+safe_download_data <- function(codes, periods, max_retries = 3) {
   for (attempt in seq_len(max_retries)) {
     result <- tryCatch(
       {
@@ -44,7 +44,7 @@ safe_download_data <- function(codes, periods, max_retries = 5) {
       error = function(e) {
         message(sprintf("Download failed (attempt %d): %s", attempt, e$message))
         if (attempt < max_retries) {
-          wait_time <- min(2^attempt, 10)  # Exponential backoff, max 10s
+          wait_time <- min(3 * attempt, 15)  # Linear backoff, max 15s
           message(sprintf("Waiting %d seconds before retry...", wait_time))
           Sys.sleep(wait_time)
         }
@@ -70,11 +70,12 @@ if (!file.exists("data/incomes.csv")) {
   stop("Data file not found: data/incomes.csv. Run initial data download first.")
 }
 
-# Get latest period from existing data
+# Get latest period from existing data (more efficient - read only date column)
 latest_period_data <- read_csv(
   "data/incomes.csv",
   col_types = cols_only(REP_PERIOD = col_date()),
-  show_col_types = FALSE
+  show_col_types = FALSE,
+  lazy = FALSE
 )
 
 if (nrow(latest_period_data) == 0 || all(is.na(latest_period_data$REP_PERIOD))) {
@@ -149,6 +150,9 @@ if (current_year == latest_year && current_month == latest_month) {
       
       existing_data <- read_csv(file, show_col_types = FALSE)
       
+      # Store original column order from existing data
+      original_cols <- names(existing_data)
+      
       # Ensure COD_BUDGET is character type in both datasets
       if ("COD_BUDGET" %in% names(existing_data)) {
         existing_data <- existing_data |>
@@ -176,11 +180,18 @@ if (current_year == latest_year && current_month == latest_month) {
       data_no_overlap <- existing_data |>
         filter(!REP_PERIOD %in% new_periods)
 
-      # Ensure column compatibility before combining
+      # Only keep columns that exist in both datasets to avoid column mismatch
       common_cols <- intersect(names(data_no_overlap), names(new_data_with_city))
       
       if (length(common_cols) == 0) {
         stop(sprintf("%s: No common columns between old and new data", description))
+      }
+      
+      # Verify all original columns are present
+      missing_cols <- setdiff(original_cols, common_cols)
+      if (length(missing_cols) > 0) {
+        warning(sprintf("%s: New data missing columns: %s", 
+                       description, paste(missing_cols, collapse = ", ")))
       }
       
       # Use bind_rows for safer combining (handles column differences)
@@ -195,6 +206,10 @@ if (current_year == latest_year && current_month == latest_month) {
         warning(sprintf("%s: Updated data is empty", description))
         return(invisible(NULL))
       }
+      
+      # Reorder columns to match original file structure
+      final_cols <- intersect(original_cols, names(data_updated))
+      data_updated <- data_updated |> select(all_of(final_cols))
 
       write_csv(data_updated, file)
       message(sprintf("%s: %d rows written (%d new periods)", 
