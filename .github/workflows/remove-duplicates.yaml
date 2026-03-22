@@ -30,10 +30,10 @@ jobs:
             any::purrr
             any::lubridate
             any::httr
-            any::jsonlite
+            any::arrow
 
       - name: Run de-duplication script
-        run: Rscript -e 'source("remove_duplicates.R")'
+        run: Rscript -e 'source("src/remove_duplicates.R")'
         # change the file name above if your script is named differently
 
       - name: Commit results

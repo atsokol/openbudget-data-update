@@ -42,69 +42,51 @@ api_construct <- function(budgetCode,
 
 # Function to call API, read in and parse data with retry logic
 call_api <- function(api_path, col_types, max_retries = 3) {
+  last_error <- ""
+
   for (attempt in seq_len(max_retries)) {
+    # Pause before retries: longer after rate-limit (429), shorter otherwise
+    if (attempt > 1) {
+      wait_secs <- if (grepl("rate_limited_429", last_error)) 10 else 3
+      message(sprintf("  Retrying in %d seconds (attempt %d/%d)...",
+                      wait_secs, attempt, max_retries))
+      Sys.sleep(wait_secs)
+    }
+
     result <- tryCatch({
-      # Add small delay to avoid rate limiting
-      if (attempt > 1) {
-        wait_time <- min(2^(attempt-1), 5)
-        Sys.sleep(wait_time)
-      }
-      
       response <- GET(api_path, timeout(30))
-      
-      # Check HTTP status
-      if (status_code(response) != 200) {
-        if (status_code(response) == 429) {
-          # Rate limited, retry with longer wait
-          if (attempt < max_retries) {
-            message(sprintf("Rate limited (429), retrying in %d seconds...", 10))
-            Sys.sleep(10)
-            return(NULL)
-          }
-        }
-        stop(sprintf("API request failed with status %d", status_code(response)))
-      }
-      
-      # Check if response has content
-      if (length(response$content) == 0) {
-        warning(sprintf("Empty response from API (attempt %d)", attempt))
-        return(tibble())
-      }
-      
-      # Parse response
+      status   <- status_code(response)
+
+      if (status == 429) stop("rate_limited_429")
+      if (status != 200) stop(sprintf("HTTP %d", status))
+      if (length(response$content) == 0) stop("empty_response_body")
+
       data_call <- response |>
         pluck("content") |>
         rawToChar() |>
         read_delim(delim = ";", col_types = col_types, show_col_types = FALSE) |>
         mutate(REP_PERIOD = readr::parse_date(REP_PERIOD, "%m.%Y") |>
-                 ceiling_date(unit = "month") - days(1))  # Use end of month dates
-      
-      # Validate parsed data
+                 ceiling_date(unit = "month") - days(1))
+
       if (nrow(data_call) == 0) {
-        warning(sprintf("No data returned from API"))
+        message(sprintf("  No data returned from API (attempt %d)", attempt))
       }
-      
-      # Add small delay between successful calls
-      Sys.sleep(0.2)
-      
-      return(data_call)
+
+      Sys.sleep(0.2)  # polite delay between successful calls
+      data_call
+
     }, error = function(e) {
-      if (attempt < max_retries) {
-        message(sprintf("API call failed (attempt %d/%d): %s", attempt, max_retries, e$message))
-        return(NULL)
-      } else {
-        stop(sprintf("Failed to call API after %d attempts: %s\nURL: %s", 
-                    max_retries, e$message, api_path))
-      }
+      last_error <<- e$message
+      message(sprintf("  API call failed (attempt %d/%d): %s",
+                      attempt, max_retries, e$message))
+      NULL
     })
-    
-    if (!is.null(result)) {
-      return(result)
-    }
+
+    if (!is.null(result)) return(result)
   }
-  
-  # Should not reach here, but return empty tibble as fallback
-  return(tibble())
+
+  stop(sprintf("Failed to call API after %d attempts.\nURL: %s\nLast error: %s",
+               max_retries, api_path, last_error))
 }
 
 # Function to download data

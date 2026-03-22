@@ -3,13 +3,17 @@ library(tidyr)
 library(dplyr)
 library(purrr)
 library(httr)
-library(jsonlite)
 library(lubridate)
+library(arrow)
 
-source("download.R")
+source("src/helpers/api.R")
+source("src/helpers/utils.R")
 
 # Suppress column specification messages
 options(readr.show_col_types = FALSE)
+
+# Ensure parquet output folder exists
+dir.create("data/parquet", showWarnings = FALSE, recursive = TRUE)
 
 # Validate input files exist
 required_files <- c("inputs/city_codes.csv", "inputs/variable_types.csv")
@@ -25,39 +29,14 @@ if (nrow(city_codes) == 0) {
   stop("city_codes.csv is empty")
 }
 
-# FOR TESTING: Use only first city to speed up execution
-# Comment out this line for production use
-# city_codes <- city_codes |> slice(1)
-# message(sprintf("TESTING MODE: Using only %s", city_codes$city[1]))
+# FOR TESTING: Uncomment to use only one city to speed up execution
+# if (Sys.getenv("TEST_MODE") == "true") {
+#   city_codes <- city_codes |> filter(city == "R_Rivne")
+#   message(sprintf("TESTING MODE: Using only %s", city_codes$city[1]))
+# }
 
 cities <- city_codes |> pull(city) |> unique()
 codes <- city_codes |> filter(city %in% cities) |> pull(value)
-
-# Helper function to safely download data with retry on connection reset
-safe_download_data <- function(codes, periods, max_retries = 3) {
-  for (attempt in seq_len(max_retries)) {
-    result <- tryCatch(
-      {
-        message(sprintf("Download attempt %d of %d", attempt, max_retries))
-        download_data(codes, periods)
-      },
-      error = function(e) {
-        message(sprintf("Download failed (attempt %d): %s", attempt, e$message))
-        if (attempt < max_retries) {
-          wait_time <- min(3 * attempt, 15)  # Linear backoff, max 15s
-          message(sprintf("Waiting %d seconds before retry...", wait_time))
-          Sys.sleep(wait_time)
-        }
-        return(NULL)
-      }
-    )
-    if (!is.null(result)) {
-      message("Download successful")
-      return(result)
-    }
-  }
-  stop(sprintf("Failed to download data after %d attempts", max_retries))
-}
 
 # Download data
 # Use last day of previous month (last complete month)
@@ -96,6 +75,152 @@ latest_month <- month(latest_period)
 message(sprintf("Latest data: %s", format(latest_period, "%Y-%m-%d")))
 message(sprintf("Current date: %s", format(current_date, "%Y-%m-%d")))
 
+# Check for missing cities
+message("Checking for missing cities...")
+existing_codes_data <- read_csv(
+  "data/incomes.csv",
+  col_types = cols_only(COD_BUDGET = col_character()),
+  show_col_types = FALSE,
+  lazy = FALSE
+)
+
+existing_codes <- existing_codes_data |>
+  pull(COD_BUDGET) |>
+  unique() |>
+  na.omit()
+
+expected_codes <- city_codes |> pull(value) |> unique()
+missing_codes <- setdiff(expected_codes, existing_codes)
+
+if (length(missing_codes) > 0) {
+  # Get city names for missing codes
+  missing_cities_info <- city_codes |>
+    filter(value %in% missing_codes) |>
+    distinct(city, value)
+  
+  message(sprintf("Found %d missing budget codes for %d cities:", 
+                  length(missing_codes),
+                  n_distinct(missing_cities_info$city)))
+  message(paste(sprintf("  %s (%s)", missing_cities_info$city, missing_cities_info$value), 
+                collapse = "\n"))
+  
+  # Download all years of data for missing cities (2021 to current year)
+  years_for_missing <- 2021:current_year
+  message(sprintf("Downloading data for missing cities for years: %s", 
+                  paste(years_for_missing, collapse = ", ")))
+  
+  missing_data <- tryCatch(
+    {
+      safe_download_data(missing_codes, years_for_missing)
+    },
+    error = function(e) {
+      warning(sprintf("Failed to download data for missing cities: %s", e$message))
+      return(NULL)
+    }
+  )
+  
+  # Validate downloaded data
+  if (is.null(missing_data) || length(missing_data) == 0) {
+    warning("Failed to download data for missing cities - they may not have data available")
+  } else {
+    missing_data_map <- map_api_response(missing_data)
+    
+    # Function to add missing city data
+    add_missing_data <- function(file, new_data, description) {
+      if (!file.exists(file)) {
+        stop(sprintf("Data file not found: %s", file))
+      }
+      
+      if (is.null(new_data) || nrow(new_data) == 0) {
+        message(sprintf("Skipping %s: no data for missing cities", description))
+        return(invisible(NULL))
+      }
+      
+      message(sprintf("Adding missing cities to %s...", description))
+      
+      existing_data <- read_data_csv(file)
+
+      # Store original column order from existing data
+      original_cols <- names(existing_data)
+
+      if ("COD_BUDGET" %in% names(new_data)) {
+        new_data <- new_data |>
+          mutate(COD_BUDGET = as.character(COD_BUDGET))
+      }
+
+      # Add city information to new data
+      new_data_with_city <- new_data |>
+        left_join(city_codes, join_by(COD_BUDGET == value)) |>
+        rename(CITY = city)
+
+      # Validate join succeeded
+      if (sum(is.na(new_data_with_city$CITY)) > 0) {
+        warning(sprintf("%s: %d rows with unmatched city codes",
+                       description, sum(is.na(new_data_with_city$CITY))))
+      }
+
+      # Only keep columns that exist in both datasets
+      common_cols <- intersect(names(existing_data), names(new_data_with_city))
+
+      if (length(common_cols) == 0) {
+        stop(sprintf("%s: No common columns between old and new data", description))
+      }
+
+      # Use bind_rows for safer combining
+      data_updated <- bind_rows(
+        existing_data |> select(all_of(common_cols)),
+        new_data_with_city |> select(all_of(common_cols))
+      ) |>
+        arrange(REP_PERIOD, COD_BUDGET)
+
+      # Validate result
+      if (nrow(data_updated) == 0) {
+        warning(sprintf("%s: Updated data is empty", description))
+        return(invisible(NULL))
+      }
+
+      # Reorder columns to match original file structure
+      final_cols <- intersect(original_cols, names(data_updated))
+      data_updated <- data_updated |> select(all_of(final_cols))
+
+      write_data(data_updated, file)
+      message(sprintf("%s: %d rows written (added %d rows for missing cities)",
+                     description, nrow(data_updated), nrow(new_data_with_city)))
+    }
+    
+    # Add missing city data to each file
+    add_missing_data("data/credits.csv", 
+                     missing_data_map$credits |> distinct(), 
+                     "credits")
+    
+    add_missing_data("data/expenses.csv", 
+                     missing_data_map$expenses |> distinct(), 
+                     "expenses")
+    
+    add_missing_data("data/expenses_functional.csv",
+                     missing_data_map$expenses_functional |>
+                       distinct() |> 
+                       group_by(REP_PERIOD, FUND_TYP, COD_BUDGET,
+                                COD_CONS_MB_FK, COD_CONS_MB_FK_NAME, COD_CONS_MB_PK) |>
+                       summarise(across(where(is.numeric), ~sum(., na.rm = TRUE)), 
+                                .groups = "drop"),
+                     "expenses_functional")
+    
+    add_missing_data("data/debts.csv", 
+                     missing_data_map$debts |> distinct(), 
+                     "debts")
+    
+    add_missing_data("data/incomes.csv", 
+                     missing_data_map$incomes |> distinct(), 
+                     "incomes")
+    
+    message("Missing cities data added successfully")
+  }
+} else {
+  message("All cities are present in the data")
+}
+
+# Regular update for all cities
 # If current period is the same as latest period, data is up to date
 if (current_year == latest_year && current_month == latest_month) {
   message("Data is up to date.")
@@ -126,14 +251,7 @@ if (current_year == latest_year && current_month == latest_month) {
       stop("Downloaded data is empty or NULL")
     }
 
-    # Map data by name for safer access
-    data_map <- list(
-      credits = if ("CREDITS, CREDIT" %in% names(data)) data[["CREDITS, CREDIT"]] else NULL,
-      expenses = if ("EXPENSES, ECONOMIC" %in% names(data)) data[["EXPENSES, ECONOMIC"]] else NULL,
-      expenses_functional = if ("EXPENSES, PROGRAM" %in% names(data)) data[["EXPENSES, PROGRAM"]] else NULL,
-      debts = if ("FINANCING_DEBTS" %in% names(data)) data[["FINANCING_DEBTS"]] else NULL,
-      incomes = if ("INCOMES" %in% names(data)) data[["INCOMES"]] else NULL
-    )
+    data_map <- map_api_response(data)
 
     # Function to update data files
     data_update <- function(file, new_data, description) {
@@ -148,30 +266,24 @@ if (current_year == latest_year && current_month == latest_month) {
       
       message(sprintf("Updating %s...", description))
       
-      existing_data <- read_csv(file, show_col_types = FALSE)
-      
+      existing_data <- read_data_csv(file)
+
       # Store original column order from existing data
       original_cols <- names(existing_data)
-      
-      # Ensure COD_BUDGET is character type in both datasets
-      if ("COD_BUDGET" %in% names(existing_data)) {
-        existing_data <- existing_data |>
-          mutate(COD_BUDGET = as.character(COD_BUDGET))
-      }
-      
+
       if ("COD_BUDGET" %in% names(new_data)) {
         new_data <- new_data |>
           mutate(COD_BUDGET = as.character(COD_BUDGET))
       }
-      
+
       # Add city information to new data
       new_data_with_city <- new_data |>
         left_join(city_codes, join_by(COD_BUDGET == value)) |>
         rename(CITY = city)
-      
+
       # Validate join succeeded
       if (sum(is.na(new_data_with_city$CITY)) > 0) {
-        warning(sprintf("%s: %d rows with unmatched city codes", 
+        warning(sprintf("%s: %d rows with unmatched city codes",
                        description, sum(is.na(new_data_with_city$CITY))))
       }
 
@@ -182,18 +294,18 @@ if (current_year == latest_year && current_month == latest_month) {
 
       # Only keep columns that exist in both datasets to avoid column mismatch
       common_cols <- intersect(names(data_no_overlap), names(new_data_with_city))
-      
+
       if (length(common_cols) == 0) {
         stop(sprintf("%s: No common columns between old and new data", description))
       }
-      
+
       # Verify all original columns are present
       missing_cols <- setdiff(original_cols, common_cols)
       if (length(missing_cols) > 0) {
-        warning(sprintf("%s: New data missing columns: %s", 
+        warning(sprintf("%s: New data missing columns: %s",
                        description, paste(missing_cols, collapse = ", ")))
       }
-      
+
       # Use bind_rows for safer combining (handles column differences)
       data_updated <- bind_rows(
         data_no_overlap |> select(all_of(common_cols)),
@@ -206,13 +318,13 @@ if (current_year == latest_year && current_month == latest_month) {
         warning(sprintf("%s: Updated data is empty", description))
         return(invisible(NULL))
       }
-      
+
       # Reorder columns to match original file structure
       final_cols <- intersect(original_cols, names(data_updated))
       data_updated <- data_updated |> select(all_of(final_cols))
 
-      write_csv(data_updated, file)
-      message(sprintf("%s: %d rows written (%d new periods)", 
+      write_data(data_updated, file)
+      message(sprintf("%s: %d rows written (%d new periods)",
                      description, nrow(data_updated), length(new_periods)))
     }
 
@@ -242,7 +354,7 @@ if (current_year == latest_year && current_month == latest_month) {
                 data_map$incomes |> distinct(), 
                 "incomes")
     
-    message("Data update completed successfully")
+    message("Regular data update completed successfully")
   } else {
     message("Data is up to date.")
   }
