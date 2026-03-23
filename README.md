@@ -1,7 +1,7 @@
 # Openbudget Data Update
 
 An automated pipeline that downloads Ukrainian municipal budget data from the
-[Open Budget API](https://api.openbudget.gov.ua), stores it as CSV and Parquet
+[Open Budget](https://openbudget.gov.ua/en) resource using available [API](https://confluence-ext.spending.gov.ua/spaces/OpenBudget/pages/364490/10.+%D0%9F%D1%83%D0%B1%D0%BB%D1%96%D1%87%D0%BD%D0%B5+API), stores it as CSV and Parquet
 files in this repository, and runs weekly via GitHub Actions.
 
 ---
