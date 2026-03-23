@@ -46,17 +46,12 @@ current_year <- year(current_date)
 current_month <- month(current_date)
 
 # Check if data file exists
-if (!file.exists("data/incomes.csv")) {
-  stop("Data file not found: data/incomes.csv. Run initial data download first.")
+if (!data_file_exists("data/incomes.csv")) {
+  stop("Data file not found: data/incomes. Run initial data download first.")
 }
 
 # Get latest period from existing data (more efficient - read only date column)
-latest_period_data <- read_csv(
-  "data/incomes.csv",
-  col_types = cols_only(REP_PERIOD = col_date()),
-  show_col_types = FALSE,
-  lazy = FALSE
-)
+latest_period_data <- read_data_cols("data/incomes.csv", "REP_PERIOD")
 
 if (nrow(latest_period_data) == 0 || all(is.na(latest_period_data$REP_PERIOD))) {
   stop("No valid dates found in incomes.csv")
@@ -78,12 +73,7 @@ message(sprintf("Current date: %s", format(current_date, "%Y-%m-%d")))
 
 # Check for missing cities
 message("Checking for missing cities...")
-existing_codes_data <- read_csv(
-  "data/incomes.csv",
-  col_types = cols_only(COD_BUDGET = col_character()),
-  show_col_types = FALSE,
-  lazy = FALSE
-)
+existing_codes_data <- read_data_cols("data/incomes.csv", "COD_BUDGET")
 
 existing_codes <- existing_codes_data |>
   pull(COD_BUDGET) |>
@@ -128,7 +118,7 @@ if (length(missing_codes) > 0) {
     
     # Function to add missing city data
     add_missing_data <- function(file, new_data, description) {
-      if (!file.exists(file)) {
+      if (!data_file_exists(file)) {
         stop(sprintf("Data file not found: %s", file))
       }
       
@@ -139,7 +129,7 @@ if (length(missing_codes) > 0) {
       
       message(sprintf("Adding missing cities to %s...", description))
       
-      existing_data <- read_data_csv(file)
+      existing_data <- read_data(file)
 
       # Store original column order from existing data
       original_cols <- names(existing_data)
@@ -251,7 +241,7 @@ if (current_year == latest_year && current_month == latest_month) {
 
     # Function to update data files
     data_update <- function(file, new_data, description) {
-      if (!file.exists(file)) {
+      if (!data_file_exists(file)) {
         stop(sprintf("Data file not found: %s", file))
       }
       
@@ -262,7 +252,7 @@ if (current_year == latest_year && current_month == latest_month) {
       
       message(sprintf("Updating %s...", description))
       
-      existing_data <- read_data_csv(file)
+      existing_data <- read_data(file)
 
       # Store original column order from existing data
       original_cols <- names(existing_data)

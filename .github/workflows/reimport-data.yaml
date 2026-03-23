@@ -40,7 +40,7 @@ jobs:
 
       - name: Verify imported data
         run: |
-          for file in data/*.csv; do
+          for file in data/parquet/*.parquet; do
             if [ ! -s "$file" ]; then
               echo "Error: $file is empty"
               exit 1
@@ -51,7 +51,8 @@ jobs:
         run: |
           git config --local user.email "actions@github.com"
           git config --local user.name "GitHub Actions"
-          git add data/*
+          git rm --cached data/*.csv 2>/dev/null || true
+          git add data/parquet/*
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else

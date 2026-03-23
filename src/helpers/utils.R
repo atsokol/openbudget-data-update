@@ -100,52 +100,62 @@ aggregate_expenses_functional <- function(df) {
 
 # ── IO ─────────────────────────────────────────────────────────────────────────
 
-# Read a data CSV, preserving COD_BUDGET as character to prevent leading-zero loss.
-read_data_csv <- function(path) {
-  readr::read_csv(path,
-                  col_types = readr::cols(COD_BUDGET = readr::col_character()),
-                  show_col_types = FALSE)
+# Resolve the parquet path that corresponds to a data path (given as "data/<name>.csv").
+parquet_path_for <- function(path) {
+  base <- sub("\\.csv$", "", basename(path))
+  file.path("data/parquet", paste0(base, ".parquet"))
 }
 
-# Write df to both the CSV path and the matching parquet file under data/parquet/.
-write_data <- function(df, csv_path) {
-  readr::write_csv(df, csv_path)
-  parquet_path <- file.path("data/parquet",
-                            sub("\\.csv$", ".parquet", basename(csv_path)))
+# Check whether a data file exists (parquet).
+data_file_exists <- function(path) {
+  file.exists(parquet_path_for(path))
+}
+
+# Read a data file from parquet.
+# Preserves COD_BUDGET as character to prevent leading-zero loss.
+read_data <- function(path) {
+  pq <- parquet_path_for(path)
+  if (!file.exists(pq)) stop(sprintf("Data file not found: %s", pq))
+  df <- arrow::read_parquet(pq)
+  if ("COD_BUDGET" %in% names(df))
+    df <- dplyr::mutate(df, COD_BUDGET = as.character(COD_BUDGET))
+  df
+}
+
+# Read only selected columns from a parquet data file.
+read_data_cols <- function(path, columns) {
+  pq <- parquet_path_for(path)
+  if (!file.exists(pq)) stop(sprintf("Data file not found: %s", pq))
+  arrow::read_parquet(pq, col_select = dplyr::all_of(columns))
+}
+
+# Write df to the parquet file under data/parquet/.
+write_data <- function(df, path) {
+  parquet_path <- parquet_path_for(path)
+  if (!dir.exists(dirname(parquet_path))) dir.create(dirname(parquet_path), recursive = TRUE)
   arrow::write_parquet(df, parquet_path)
 }
 
-# De-duplicate all CSV files in a folder and sync their parquet counterparts.
-clean_csv_folder <- function(folder) {
-  folder <- normalizePath(folder, mustWork = TRUE)
-  files  <- list.files(folder, pattern = "\\.csv$", full.names = TRUE)
-
-  if (length(files) == 0) {
-    message("No CSV files found in folder.")
+# De-duplicate all parquet files in the data/parquet/ folder.
+clean_data <- function(folder = "data") {
+  parquet_dir <- file.path(folder, "parquet")
+  if (!dir.exists(parquet_dir)) {
+    message("No parquet directory found in folder.")
     return(invisible(NULL))
   }
-
-  for (file in files) {
-    message("Cleaning: ", basename(file))
-
-    # col_types prevents COD_BUDGET being read as double (would lose leading zeros)
-    df       <- readr::read_csv(file,
-                                col_types = readr::cols(COD_BUDGET = readr::col_character()),
-                                show_col_types = FALSE)
+  parquet_files <- list.files(parquet_dir, pattern = "\\.parquet$", full.names = TRUE)
+  if (length(parquet_files) == 0) {
+    message("No parquet files found.")
+    return(invisible(NULL))
+  }
+  for (pf in parquet_files) {
+    message("Cleaning: ", basename(pf))
+    df       <- arrow::read_parquet(pf) |>
+      dplyr::mutate(COD_BUDGET = as.character(COD_BUDGET))
     df_clean <- dplyr::distinct(df)
-
     n_removed <- nrow(df) - nrow(df_clean)
     if (n_removed > 0) message(sprintf("  Removed %d duplicate rows", n_removed))
-
-    readr::write_csv(df_clean, file)
-
-    parquet_dir <- file.path(folder, "parquet")
-    if (dir.exists(parquet_dir)) {
-      parquet_path <- file.path(parquet_dir,
-                                sub("\\.csv$", ".parquet", basename(file)))
-      arrow::write_parquet(df_clean, parquet_path)
-    }
+    arrow::write_parquet(df_clean, pf)
   }
-
   message("Cleaning complete.")
 }

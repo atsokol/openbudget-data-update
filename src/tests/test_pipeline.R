@@ -24,6 +24,8 @@ library(arrow)
 
 options(readr.show_col_types = FALSE)
 
+source("src/helpers/utils.R")
+
 # ── helpers ────────────────────────────────────────────────────────────────────
 
 pass <- 0L; fail <- 0L; skip <- 0L
@@ -48,11 +50,11 @@ city_codes_current <- read_csv("inputs/city_codes_current.csv")
 var_types          <- read_csv("inputs/variable_types.csv")
 
 data_files <- list(
-  incomes              = "data/incomes.csv",
-  expenses             = "data/expenses.csv",
-  expenses_functional  = "data/expenses_functional.csv",
-  debts                = "data/debts.csv",
-  credits              = "data/credits.csv"
+  incomes              = "data/parquet/incomes.parquet",
+  expenses             = "data/parquet/expenses.parquet",
+  expenses_functional  = "data/parquet/expenses_functional.parquet",
+  debts                = "data/parquet/debts.parquet",
+  credits              = "data/parquet/credits.parquet"
 )
 
 # Expected columns per budgetItem (from variable_types.csv, plus CITY added by pipeline)
@@ -124,7 +126,7 @@ for (nm in names(data_files)) {
   if (!file.exists(f)) {
     skip_check(sprintf("%-25s columns present", nm), "file not found"); next
   }
-  df <- read_csv(f, col_types = cols(COD_BUDGET = col_character()))
+  df <- read_parquet(f) |> mutate(COD_BUDGET = as.character(COD_BUDGET))
   item_key <- file_to_item[[nm]]
   exp <- expected_cols |> filter(budgetItem_cls == item_key) |> pull(cols) |> unlist()
 
@@ -165,7 +167,7 @@ for (nm in names(data_files)) {
   if (!file.exists(f)) {
     skip_check(sprintf("%-25s cities present", nm), "file not found"); next
   }
-  df    <- read_csv(f, col_types = cols_only(CITY = col_character()))
+  df    <- read_parquet(f, col_select = "CITY")
   found <- sort(unique(df$CITY))
   missing_cities <- setdiff(expected_cities, found)
   extra_cities   <- setdiff(found, expected_cities)
@@ -195,7 +197,8 @@ for (nm in names(data_files)) {
     skip_check(sprintf("%-25s COD_BUDGET in known codes", nm), "file not found")
     next
   }
-  df <- read_csv(f, col_types = cols_only(COD_BUDGET = col_character()))
+  df <- read_parquet(f, col_select = "COD_BUDGET") |>
+    mutate(COD_BUDGET = as.character(COD_BUDGET))
   unknown <- setdiff(unique(df$COD_BUDGET), all_known_codes)
   check(sprintf("%-25s all COD_BUDGET values are known codes", nm),
         length(unknown) == 0)
@@ -207,9 +210,9 @@ for (nm in names(data_files)) {
 # pre-2023 data (they are no longer in city_codes, but were used to download
 # historical rows — these rows have CITY populated, so they are fine)
 message("  INFO  Checking old codes only appear in historical data (pre-2023)...")
-incomes_check <- read_csv("data/incomes.csv",
-                          col_types = cols_only(COD_BUDGET = col_character(),
-                                                REP_PERIOD = col_date()))
+incomes_check <- read_parquet("data/parquet/incomes.parquet",
+                              col_select = c("COD_BUDGET", "REP_PERIOD")) |>
+  mutate(COD_BUDGET = as.character(COD_BUDGET))
 # Old 11-digit codes that should not appear in 2023+ data
 # (Kyiv 26000000000 is excluded: both Kyiv codes cover all years,
 #  so historical rows with 26000000000 in 2023+ are expected)
@@ -233,10 +236,8 @@ if (nrow(old_in_2023_plus) > 0)
 
 message("\n[5] Year/period coverage (incomes)")
 
-inc <- read_csv("data/incomes.csv",
-                col_types = cols_only(CITY       = col_character(),
-                                      REP_PERIOD = col_date(),
-                                      FUND_TYP   = col_character()))
+inc <- read_parquet("data/parquet/incomes.parquet",
+                    col_select = c("CITY", "REP_PERIOD", "FUND_TYP"))
 
 # Every city should have data in every year 2021-2024
 coverage <- inc |>
@@ -278,7 +279,7 @@ for (nm in names(data_files)) {
   if (!file.exists(f)) {
     skip_check(sprintf("%-25s no duplicates", nm), "file not found"); next
   }
-  df <- read_csv(f, col_types = cols(COD_BUDGET = col_character()))
+  df <- read_parquet(f) |> mutate(COD_BUDGET = as.character(COD_BUDGET))
   check(sprintf("%-25s no duplicate rows", nm),
         nrow(df) == nrow(distinct(df)))
 }
@@ -292,7 +293,7 @@ for (nm in names(data_files)) {
   if (!file.exists(f)) {
     skip_check(sprintf("%-25s end-of-month dates", nm), "file not found"); next
   }
-  df <- read_csv(f, col_types = cols_only(REP_PERIOD = col_date()))
+  df <- read_parquet(f, col_select = "REP_PERIOD")
   # End-of-month: day(d) == days_in_month(d)
   bad_dates <- df |>
     filter(!is.na(REP_PERIOD)) |>
@@ -307,11 +308,9 @@ for (nm in names(data_files)) {
 
 message("\n[8] Code transition continuity")
 
-inc_full <- read_csv("data/incomes.csv",
-                     col_types = cols_only(CITY       = col_character(),
-                                           COD_BUDGET = col_character(),
-                                           REP_PERIOD = col_date(),
-                                           FUND_TYP   = col_character())) |>
+inc_full <- read_parquet("data/parquet/incomes.parquet",
+                         col_select = c("CITY", "COD_BUDGET", "REP_PERIOD", "FUND_TYP")) |>
+  mutate(COD_BUDGET = as.character(COD_BUDGET)) |>
   filter(FUND_TYP == "T") |>
   mutate(YEAR = year(REP_PERIOD))
 
@@ -374,12 +373,10 @@ check("Cherkasy no gap: combined codes cover 2021-2024",
 message("\n[9] Update merge logic (simulation)")
 
 # Simulate data_update(): existing data + new period, check overlap removal
-sample_inc <- read_csv("data/incomes.csv",
-                       col_types = cols_only(CITY       = col_character(),
-                                             COD_BUDGET = col_character(),
-                                             REP_PERIOD = col_date(),
-                                             FUND_TYP   = col_character(),
-                                             FAKT_AMT   = col_double()))
+sample_inc <- read_parquet("data/parquet/incomes.parquet",
+                           col_select = c("CITY", "COD_BUDGET", "REP_PERIOD",
+                                          "FUND_TYP", "FAKT_AMT")) |>
+  mutate(COD_BUDGET = as.character(COD_BUDGET))
 
 last_period  <- max(sample_inc$REP_PERIOD, na.rm = TRUE)
 prior_period <- last_period %m-% months(1)
@@ -498,8 +495,6 @@ if (api_ok) {
 # ── [11] resolve_code_conflicts() logic (no API, no files) ────────────────────
 
 message("\n[11] resolve_code_conflicts() logic")
-
-source("src/helpers/utils.R")
 
 # Mock data: two codes for a hypothetical city
 #   code_cur  — current/preferred code, has periods P2 and P3

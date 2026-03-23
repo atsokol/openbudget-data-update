@@ -14,14 +14,16 @@ dir.create("data/parquet", showWarnings = FALSE, recursive = TRUE)
 
 # ── Validate input files ────────────────────────────────────────────────────────
 
-required_files <- c(
+required_input_files <- c(
   "inputs/city_codes.csv",
   "inputs/city_codes_current.csv",
-  "inputs/variable_types.csv",
-  "data/incomes.csv"
+  "inputs/variable_types.csv"
 )
-for (f in required_files) {
+for (f in required_input_files) {
   if (!file.exists(f)) stop(sprintf("Required file missing: %s", f))
+}
+if (!data_file_exists("data/incomes.csv")) {
+  stop("Required data file missing: data/incomes.csv (checked parquet too)")
 }
 
 city_codes         <- read_csv("inputs/city_codes.csv", show_col_types = FALSE)
@@ -36,11 +38,7 @@ expected_years <- 2021:current_year
 
 message("Checking city coverage in data...")
 
-coverage <- read_csv(
-  "data/incomes.csv",
-  col_types = cols_only(CITY = col_character(), REP_PERIOD = col_date()),
-  lazy = FALSE
-) |>
+coverage <- read_data_cols("data/incomes.csv", c("CITY", "REP_PERIOD")) |>
   mutate(year = as.integer(year(REP_PERIOD))) |>
   distinct(CITY, year)
 
@@ -156,7 +154,7 @@ if (!has_data) {
 # Final dedup on all columns except COD_BUDGET: guards against same-value rows
 # surviving under two different code formats after conflict resolution.
 append_data <- function(file, new_data, description) {
-  if (!file.exists(file)) stop(sprintf("Data file not found: %s", file))
+  if (!data_file_exists(file)) stop(sprintf("Data file not found: %s", file))
 
   if (is.null(new_data) || nrow(new_data) == 0) {
     message(sprintf("Skipping %s: no new data", description))
@@ -164,7 +162,7 @@ append_data <- function(file, new_data, description) {
   }
 
   message(sprintf("Appending to %s...", description))
-  existing      <- read_data_csv(file)
+  existing      <- read_data(file)
   original_cols <- names(existing)
 
   if (sum(is.na(new_data$CITY)) > 0) {
@@ -208,11 +206,7 @@ append_data("data/incomes.csv",             all_new$incomes,             "income
 
 message("\nChecking coverage after update...")
 
-post_coverage <- read_csv(
-  "data/incomes.csv",
-  col_types = cols_only(CITY = col_character(), REP_PERIOD = col_date()),
-  lazy = FALSE
-) |>
+post_coverage <- read_data_cols("data/incomes.csv", c("CITY", "REP_PERIOD")) |>
   mutate(year = as.integer(year(REP_PERIOD))) |>
   distinct(CITY, year)
 

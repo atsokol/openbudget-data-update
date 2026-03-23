@@ -1,7 +1,7 @@
 # Openbudget Data Update
 
 An automated pipeline that downloads Ukrainian municipal budget data from the
-[Open Budget](https://openbudget.gov.ua/en) resource using available [API](https://confluence-ext.spending.gov.ua/spaces/OpenBudget/pages/364490/10.+%D0%9F%D1%83%D0%B1%D0%BB%D1%96%D1%87%D0%BD%D0%B5+API), stores it as CSV and Parquet
+[Open Budget](https://openbudget.gov.ua/en) resource using available [API](https://confluence-ext.spending.gov.ua/spaces/OpenBudget/pages/364490/10.+%D0%9F%D1%83%D0%B1%D0%BB%D1%96%D1%87%D0%BD%D0%B5+API), stores it as Parquet
 files in this repository, and runs weekly via GitHub Actions.
 
 ---
@@ -10,13 +10,11 @@ files in this repository, and runs weekly via GitHub Actions.
 
 | File | Description |
 |---|---|
-| `data/incomes.csv` | Monthly income rows per city (general + special fund) |
-| `data/expenses.csv` | Monthly expenditure by economic classification |
-| `data/expenses_functional.csv` | Monthly expenditure by functional/programme classification (aggregated) |
-| `data/debts.csv` | Financing and debt data |
-| `data/credits.csv` | Budget crediting data |
-
-Every CSV has a matching Parquet file under `data/parquet/`.
+| `data/parquet/incomes.parquet` | Monthly income rows per city (general + special fund) |
+| `data/parquet/expenses.parquet` | Monthly expenditure by economic classification |
+| `data/parquet/expenses_functional.parquet` | Monthly expenditure by functional/programme classification (aggregated) |
+| `data/parquet/debts.parquet` | Financing and debt data |
+| `data/parquet/credits.parquet` | Budget crediting data |
 
 All rows include a `CITY` column (human-readable city name) derived by joining
 `COD_BUDGET` against `inputs/city_codes.csv`.
@@ -33,9 +31,8 @@ All rows include a `CITY` column (human-readable city name) derived by joining
 │   ├── variable_types.csv      # API response columns + readr col_types per endpoint
 │
 ├── data/
-│   ├── *.csv                   # Output data files (committed to git)
 │   └── parquet/
-│       └── *.parquet           # Parquet mirror of every CSV
+│       └── *.parquet           # Output data files (committed to git)
 │
 ├── src/
 │   ├── helpers/                # Reusable functions, sourced by main scripts
@@ -45,11 +42,11 @@ All rows include a `CITY` column (human-readable city name) derived by joining
 │   ├── load_data.R             # One-time full historical load (2021 → present)
 │   ├── update_data.R           # Incremental weekly update
 │   ├── add_city.R              # Add a new city (backfills all years, all codes)
-│   ├── remove_duplicates.R     # De-duplicate all CSVs + sync parquet
+│   ├── remove_duplicates.R     # De-duplicate all parquet data files
 │   │
 │   └── tests/
 │       ├── test_pipeline.R     # Comprehensive integrity test suite (~90 assertions)
-│       ├── test_parquet.R      # Parquet write/read + CSV parity checks
+│       ├── test_parquet.R      # Parquet read/write and IO helper checks
 │       ├── test_api.R          # Manual API smoke-test for one code/year
 │       └── test_city_codes.R   # Probe all city codes × all years against live API
 │
@@ -96,27 +93,28 @@ Sourced by `load_data.R`, `update_data.R`, and `add_city.R`.
 | `safe_download_data(codes, years, max_retries)` | Wraps `download_data()` with a top-level retry loop for full-batch network failures |
 | `map_api_response(api_data)` | Converts the raw named list to `list(credits, expenses, expenses_functional, debts, incomes)` |
 | `resolve_code_conflicts(new_data, current_code)` | Resolves cross-code duplication for a city with multiple historical codes — see below |
-| `read_data_csv(path)` | `read_csv` with `COD_BUDGET = col_character()` — prevents leading-zero loss on re-read |
-| `write_data(df, csv_path)` | Writes `df` to both the CSV path and `data/parquet/<name>.parquet` atomically |
-| `clean_csv_folder(folder)` | De-duplicates all CSVs in a folder and syncs their parquet counterparts |
+| `read_data(path)` | Reads data from `data/parquet/`, preserving `COD_BUDGET` as character |
+| `read_data_cols(path, columns)` | Reads selected columns from parquet |
+| `write_data(df, path)` | Writes `df` to `data/parquet/<name>.parquet` |
+| `clean_data(folder)` | De-duplicates all parquet files in `data/parquet/` |
 
 ### `src/load_data.R` — initial full load
 
-Run once to populate `data/` from scratch. Downloads all data from 2021 to the
+Run once to populate `data/parquet/` from scratch. Downloads all data from 2021 to the
 current year for every city in `inputs/city_codes_current.csv`, joins `CITY`
 onto each row using `inputs/city_codes.csv` (all historical codes), and writes
-CSV + Parquet for all five datasets.
+Parquet files for all five datasets.
 
 ### `src/update_data.R` — incremental weekly update
 
 Run weekly by the GitHub Actions schedule. Two-phase logic:
 
 1. **Missing city check** — compares `COD_BUDGET` values present in
-   `data/incomes.csv` against `inputs/city_codes_current.csv`. If any current
+   the incomes data against `inputs/city_codes_current.csv`. If any current
    codes are absent, downloads their full history (2021 → now) and appends to
    all five files.
 
-2. **Period update** — reads the latest `REP_PERIOD` from `incomes.csv` and
+2. **Period update** — reads the latest `REP_PERIOD` from the incomes data and
    compares it to the last complete calendar month. Downloads any new years,
    removes overlapping periods from existing data, and appends the refreshed rows.
 
@@ -124,7 +122,7 @@ Run weekly by the GitHub Actions schedule. Two-phase logic:
 
 Run manually after adding a new city's codes to the input files (see workflow
 below). Detects all cities in `inputs/city_codes.csv` that have incomplete year
-coverage in `data/incomes.csv`, then for each:
+coverage in the incomes data, then for each:
 
 1. Downloads **all codes** for the city × all missing years.
 2. Resolves duplicate records that arise when multiple codes return data for the
@@ -136,7 +134,7 @@ coverage in `data/incomes.csv`, then for each:
 
 ### `src/remove_duplicates.R`
 
-Thin main script: sources `helpers/utils.R` and calls `clean_csv_folder("data")`.
+Thin main script: sources `helpers/utils.R` and calls `clean_data("data")`.
 The de-duplication logic lives in `helpers/utils.R`.
 
 ---
@@ -183,7 +181,7 @@ codes (`c` = character, `d` = double, `i` = integer, `f` = factor) that
 | `add-city.yaml` | Manual | `add_city.R` | Add a new city (backfills all years) |
 | `remove-duplicates.yaml` | Manual | `remove_duplicates.R` | De-duplicate + sync parquet |
 
-All workflows commit changed files in `data/` back to `main`. The `update-data`,
+All workflows commit changed files in `data/parquet/` back to `main`. The `update-data`,
 `add-city`, and `remove-duplicates` workflows rebase before pushing to handle
 concurrent runs.
 

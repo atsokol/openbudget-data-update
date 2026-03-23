@@ -42,7 +42,7 @@ jobs:
           git config --local user.name "GitHub Actions"
 
           # 1) Commit whatever the R script changed
-          git add data/*
+          git add data/parquet/*
           git commit -m "Data updated" || echo "No changes to commit"
 
           # 2) Make sure we're up to date with remote main
