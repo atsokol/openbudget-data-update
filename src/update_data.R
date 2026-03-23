@@ -24,19 +24,20 @@ for (f in required_files) {
 }
 
 city_codes <- read_csv("inputs/city_codes.csv", show_col_types = FALSE)
+city_codes_current <- read_csv("inputs/city_codes_current.csv", show_col_types = FALSE)
 
-if (nrow(city_codes) == 0) {
-  stop("city_codes.csv is empty")
+if (nrow(city_codes_current) == 0) {
+  stop("city_codes_current.csv is empty")
 }
 
 # FOR TESTING: Uncomment to use only one city to speed up execution
 # if (Sys.getenv("TEST_MODE") == "true") {
-#   city_codes <- city_codes |> filter(city == "R_Rivne")
-#   message(sprintf("TESTING MODE: Using only %s", city_codes$city[1]))
+#   city_codes_current <- city_codes_current |> filter(city == "R_Rivne")
+#   message(sprintf("TESTING MODE: Using only %s", city_codes_current$city[1]))
 # }
 
-cities <- city_codes |> pull(city) |> unique()
-codes <- city_codes |> filter(city %in% cities) |> pull(value)
+# Use current codes for API requests; all historical codes for the CITY join
+codes <- city_codes_current |> pull(value)
 
 # Download data
 # Use last day of previous month (last complete month)
@@ -89,7 +90,7 @@ existing_codes <- existing_codes_data |>
   unique() |>
   na.omit()
 
-expected_codes <- city_codes |> pull(value) |> unique()
+expected_codes <- city_codes_current |> pull(value) |> unique()
 missing_codes <- setdiff(expected_codes, existing_codes)
 
 if (length(missing_codes) > 0) {

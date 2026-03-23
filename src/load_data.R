@@ -24,13 +24,14 @@ for (f in required_files) {
 }
 
 city_codes <- read_csv("inputs/city_codes.csv", show_col_types = FALSE)
+city_codes_current <- read_csv("inputs/city_codes_current.csv", show_col_types = FALSE)
 
-if (nrow(city_codes) == 0) {
-  stop("city_codes.csv is empty")
+if (nrow(city_codes_current) == 0) {
+  stop("city_codes_current.csv is empty")
 }
 
-cities <- city_codes |> pull(city) |> unique()
-codes <- city_codes |> filter(city %in% cities) |> pull(value)
+# Use current codes for API requests; all historical codes for the CITY join
+codes <- city_codes_current |> pull(value)
 
 # Download data
 current_year <- year(Sys.Date())

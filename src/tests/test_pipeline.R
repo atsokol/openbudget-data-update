@@ -42,8 +42,9 @@ skip_check <- function(label, reason) {
 
 # ── load shared inputs ─────────────────────────────────────────────────────────
 
-city_codes  <- read_csv("inputs/city_codes.csv")
-var_types   <- read_csv("inputs/variable_types.csv")
+city_codes         <- read_csv("inputs/city_codes.csv")
+city_codes_current <- read_csv("inputs/city_codes_current.csv")
+var_types          <- read_csv("inputs/variable_types.csv")
 
 data_files <- list(
   incomes              = "data/incomes.csv",
@@ -88,10 +89,30 @@ check("no NA cities",
 check("code lengths are 10 or 11 digits",
       all(nchar(city_codes$value) %in% c(10L, 11L)))
 
-# Cities that legitimately need 2 codes
-multi_code_cities <- city_codes |> count(city) |> filter(n > 1) |> pull(city)
-check("only expected cities have multiple codes",
-      setequal(multi_code_cities, c("Cherkasy", "Kryvyi Rih", "Poltava")))
+# Each city has at most 3 codes (some have code transitions: old 10-digit,
+# 11-digit transitional, new 10-digit). All cities carry both historical
+# and current codes for backward-compatible joins.
+check("no city has more than 3 codes",
+      all(city_codes |> count(city) |> pull(n) <= 3))
+
+# ── [1b] city_codes_current.csv integrity ──────────────────────────────────────
+
+message("\n[1b] city_codes_current.csv integrity")
+
+check("current: no duplicate codes",
+      nrow(city_codes_current) == n_distinct(city_codes_current$value))
+
+check("current: no NA codes",
+      !anyNA(city_codes_current$value))
+
+check("current: no NA cities",
+      !anyNA(city_codes_current$city))
+
+check("current: one code per city",
+      nrow(city_codes_current) == n_distinct(city_codes_current$city))
+
+check("current: all codes are a subset of city_codes",
+      all(city_codes_current$value %in% city_codes$value))
 
 # ── [2] CSV files — column presence & types ────────────────────────────────────
 
@@ -164,16 +185,8 @@ for (nm in names(data_files)) {
 message("\n[4] COD_BUDGET → CITY join integrity")
 
 # All COD_BUDGET values must be from known codes (current OR historical).
-# Historical 11-digit codes were intentionally removed from city_codes.csv
-# but legitimately exist in pre-2023 rows.
-all_known_codes <- c(
-  city_codes$value,
-  "23576000000", "25559000000", "24552000000", "04576000000", "09533000000",
-  "20554000000", "22564000000", "16564000000", "04578000000", "26000000000",
-  "03551000000", "13563000000", "14549000000", "15564000000", "16570000000",
-  "17564000000", "18531000000", "19549000000", "07559000000", "02536000000",
-  "06552000000", "08562000000", "07507000000", "02100000000"
-)
+# city_codes.csv contains both current and all historical codes.
+all_known_codes <- city_codes$value
 
 for (nm in names(data_files)) {
   f <- data_files[[nm]]
