@@ -43,6 +43,41 @@ map_api_response <- function(api_data) {
   )
 }
 
+# Resolve cross-code duplication for a single city's newly downloaded data.
+#
+# When a city has multiple historical codes, downloading all of them may yield:
+#   (a) Overlap: both current and historical code return data for the same period.
+#       → Drop historical-code rows for those periods; keep current-code rows.
+#   (b) Format duplicates: the same underlying row appears under two code formats
+#       (e.g. 10-digit vs 11-digit variant) with all other values identical.
+#       → Deduplicate on all columns except COD_BUDGET, keeping current-code row.
+#
+# Arguments:
+#   new_data     – data frame for one city (already city-joined), may contain
+#                  rows from multiple COD_BUDGET values.
+#   current_code – the single authoritative code from city_codes_current.csv.
+resolve_code_conflicts <- function(new_data, current_code) {
+  if (nrow(new_data) == 0) return(new_data)
+
+  # Step 1: period-level conflict — for periods where current code has data,
+  # drop all rows from historical codes.
+  current_periods <- new_data |>
+    dplyr::filter(COD_BUDGET == current_code) |>
+    dplyr::pull(REP_PERIOD) |>
+    unique()
+
+  resolved <- new_data |>
+    dplyr::filter(COD_BUDGET == current_code | !REP_PERIOD %in% current_periods)
+
+  # Step 2: format-duplicate dedup — deduplicate on all columns except
+  # COD_BUDGET, preferring the current-code row when two rows are identical
+  # in every other column.
+  non_cod_cols <- setdiff(names(resolved), "COD_BUDGET")
+  resolved |>
+    dplyr::arrange(dplyr::desc(COD_BUDGET == current_code)) |>
+    dplyr::distinct(dplyr::across(dplyr::all_of(non_cod_cols)), .keep_all = TRUE)
+}
+
 # ── IO ─────────────────────────────────────────────────────────────────────────
 
 # Read a data CSV, preserving COD_BUDGET as character to prevent leading-zero loss.

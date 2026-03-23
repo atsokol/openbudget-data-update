@@ -1,0 +1,62 @@
+name: Add new city data
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  add-city:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.5.2'
+
+      - name: Install packages
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            any::readr
+            any::tidyr
+            any::dplyr
+            any::purrr
+            any::httr
+            any::lubridate
+            any::arrow
+
+      - name: Add city data
+        run: Rscript -e 'source("src/add_city.R")'
+        continue-on-error: false
+
+      - name: Verify output files
+        run: |
+          for file in data/*.csv; do
+            if [ ! -s "$file" ]; then
+              echo "Error: $file is empty after add-city run"
+              exit 1
+            fi
+          done
+
+      - name: Commit results
+        run: |
+          git config --local user.email "actions@github.com"
+          git config --local user.name "GitHub Actions"
+          git add data/*
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m 'Data updated: new city added'
+            git fetch origin
+            git rebase origin/main
+            git push origin
+          fi

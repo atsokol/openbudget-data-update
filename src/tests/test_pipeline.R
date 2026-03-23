@@ -12,6 +12,7 @@
 #   [8]  Code transition continuity (Kryvyi Rih, Poltava, Cherkasy)
 #   [9]  update_data merge logic (no API)
 #   [10] API smoke test (1 city, 1 year)
+#   [11] resolve_code_conflicts() logic (no API, no files)
 
 library(readr)
 library(dplyr)
@@ -493,6 +494,79 @@ if (api_ok) {
     skip_check(lbl, "API unreachable")
   }
 }
+
+# ── [11] resolve_code_conflicts() logic (no API, no files) ────────────────────
+
+message("\n[11] resolve_code_conflicts() logic")
+
+source("src/helpers/utils.R")
+
+# Mock data: two codes for a hypothetical city
+#   code_cur  — current/preferred code, has periods P2 and P3
+#   code_old  — historical code, has periods P1 and P2 (overlap on P2)
+p1 <- as.Date("2021-01-31")
+p2 <- as.Date("2022-01-31")
+p3 <- as.Date("2023-01-31")
+code_cur <- "1000000001"
+code_old <- "10000000010"  # same underlying code, 11-digit variant
+
+mock_base <- tibble(
+  REP_PERIOD = c(p2, p3, p1, p2),
+  COD_BUDGET = c(code_cur, code_cur, code_old, code_old),
+  CITY       = "MockCity",
+  FAKT_AMT   = c(100, 200, 50, 110)  # p2: cur=100, old=110 (overlap)
+)
+
+resolved <- resolve_code_conflicts(mock_base, code_cur)
+
+check("[11] overlap period: historical code row removed for p2",
+      !any(resolved$COD_BUDGET == code_old & resolved$REP_PERIOD == p2))
+
+check("[11] overlap period: current code row preserved for p2",
+      any(resolved$COD_BUDGET == code_cur & resolved$REP_PERIOD == p2))
+
+check("[11] historical-only period p1 preserved",
+      any(resolved$COD_BUDGET == code_old & resolved$REP_PERIOD == p1))
+
+check("[11] current-only period p3 preserved",
+      any(resolved$COD_BUDGET == code_cur & resolved$REP_PERIOD == p3))
+
+check("[11] total rows: 3 (p1-old, p2-cur, p3-cur)",
+      nrow(resolved) == 3)
+
+# Format duplicates: same values, different code format (e.g. 10 vs 11 digit)
+mock_fmt <- tibble(
+  REP_PERIOD = c(p1, p1),
+  COD_BUDGET = c(code_cur, code_old),
+  CITY       = "MockCity",
+  FAKT_AMT   = c(300, 300)  # identical amounts — format duplicate
+)
+resolved_fmt <- resolve_code_conflicts(mock_fmt, code_cur)
+
+check("[11] format-duplicate rows collapsed to one",
+      nrow(resolved_fmt) == 1)
+
+check("[11] format-duplicate: current code row retained",
+      resolved_fmt$COD_BUDGET[[1]] == code_cur)
+
+# Single-code city (no historical codes): output equals distinct(input)
+mock_single <- tibble(
+  REP_PERIOD = c(p1, p1, p2),       # p1 appears twice (exact duplicate)
+  COD_BUDGET = code_cur,
+  CITY       = "MockCity",
+  FAKT_AMT   = c(10, 10, 20)
+)
+resolved_single <- resolve_code_conflicts(mock_single, code_cur)
+
+check("[11] single-code: duplicate rows collapsed",
+      nrow(resolved_single) == 2)
+
+# Empty input
+mock_empty <- mock_base[0, ]
+resolved_empty <- resolve_code_conflicts(mock_empty, code_cur)
+
+check("[11] empty input returns empty data frame",
+      nrow(resolved_empty) == 0)
 
 # ── summary ───────────────────────────────────────────────────────────────────
 
