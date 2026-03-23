@@ -128,9 +128,9 @@ for (nm in names(data_files)) {
   item_key <- file_to_item[[nm]]
   exp <- expected_cols |> filter(budgetItem_cls == item_key) |> pull(cols) |> unlist()
 
-  # expenses_functional is aggregated — character columns not in group_by
-  # (COD_CONS_MB_PK_NAME, COD_CONS_EK, COD_CONS_EK_NAME) are intentionally
-  # dropped by summarise(across(where(is.numeric))). Check only surviving cols.
+  # expenses_functional is filtered to aggregate EK rows (COD_CONS_EK == 0)
+  # then COD_CONS_EK, COD_CONS_EK_NAME, and COD_CONS_MB_PK_NAME are dropped.
+  # Check only surviving columns.
   if (nm == "expenses_functional") {
     exp <- intersect(exp, names(df))
   }

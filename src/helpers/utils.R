@@ -78,6 +78,26 @@ resolve_code_conflicts <- function(new_data, current_code) {
     dplyr::distinct(dplyr::across(dplyr::all_of(non_cod_cols)), .keep_all = TRUE)
 }
 
+# ── Aggregation ────────────────────────────────────────────────────────────────
+
+# Aggregate raw PROGRAM-classification API data to one row per
+# (period, fund_type, budget_code, FK, PK).
+#
+# The API returns rows at the (PK, FK, EK) level — each program × functional
+# code combination is broken down by economic classification (COD_CONS_EK).
+# It also includes an aggregate row with COD_CONS_EK == 0 that already sums
+# all detail EK rows.  Summing across all EK values (as the old code did)
+# double-counts every amount.
+#
+# Fix: keep only the aggregate EK == 0 rows, then drop the now-constant
+# EK columns.
+aggregate_expenses_functional <- function(df) {
+  df |>
+    dplyr::filter(COD_CONS_EK == 0) |>
+    dplyr::select(-COD_CONS_EK, -COD_CONS_EK_NAME) |>
+    dplyr::distinct()
+}
+
 # ── IO ─────────────────────────────────────────────────────────────────────────
 
 # Read a data CSV, preserving COD_BUDGET as character to prevent leading-zero loss.

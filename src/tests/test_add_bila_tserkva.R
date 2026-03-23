@@ -176,12 +176,7 @@ debts_new    <- join_and_resolve(data_map$debts    |> distinct())
 ef_new <- NULL
 if (!is.null(data_map$expenses_functional) &&
     nrow(data_map$expenses_functional) > 0) {
-  ef_new <- data_map$expenses_functional |>
-    distinct() |>
-    group_by(REP_PERIOD, FUND_TYP, COD_BUDGET,
-             COD_CONS_MB_FK, COD_CONS_MB_FK_NAME, COD_CONS_MB_PK) |>
-    summarise(across(where(is.numeric), ~sum(., na.rm = TRUE)),
-              .groups = "drop") |>
+  ef_new <- aggregate_expenses_functional(data_map$expenses_functional) |>
     join_and_resolve()
 }
 

@@ -81,14 +81,10 @@ save_data(data_map$credits, "data/credits.csv", "credits")
 
 save_data(data_map$expenses, "data/expenses.csv", "expenses")
 
-# Expenses functional needs aggregation
+# Expenses functional: keep only aggregate EK rows (COD_CONS_EK == 0) to avoid
+# double-counting detail + aggregate economic-classification rows.
 if (!is.null(data_map$expenses_functional) && nrow(data_map$expenses_functional) > 0) {
-  expenses_func_agg <- data_map$expenses_functional |>
-    distinct() |>
-    group_by(REP_PERIOD, FUND_TYP, COD_BUDGET,
-             COD_CONS_MB_FK, COD_CONS_MB_FK_NAME, COD_CONS_MB_PK) |>
-    summarise(across(where(is.numeric), ~sum(., na.rm = TRUE)), 
-             .groups = "drop")
+  expenses_func_agg <- aggregate_expenses_functional(data_map$expenses_functional)
   save_data(expenses_func_agg, "data/expenses_functional.csv", "expenses_functional")
 } else {
   warning("Skipping expenses_functional: no data available")

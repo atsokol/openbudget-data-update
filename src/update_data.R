@@ -199,12 +199,7 @@ if (length(missing_codes) > 0) {
                      "expenses")
     
     add_missing_data("data/expenses_functional.csv",
-                     missing_data_map$expenses_functional |>
-                       distinct() |> 
-                       group_by(REP_PERIOD, FUND_TYP, COD_BUDGET,
-                                COD_CONS_MB_FK, COD_CONS_MB_FK_NAME, COD_CONS_MB_PK) |>
-                       summarise(across(where(is.numeric), ~sum(., na.rm = TRUE)), 
-                                .groups = "drop"),
+                     aggregate_expenses_functional(missing_data_map$expenses_functional),
                      "expenses_functional")
     
     add_missing_data("data/debts.csv", 
@@ -339,12 +334,7 @@ if (current_year == latest_year && current_month == latest_month) {
                 "expenses")
     
     data_update("data/expenses_functional.csv",
-                data_map$expenses_functional |>
-                  distinct() |> 
-                  group_by(REP_PERIOD, FUND_TYP, COD_BUDGET,
-                           COD_CONS_MB_FK, COD_CONS_MB_FK_NAME, COD_CONS_MB_PK) |>
-                  summarise(across(where(is.numeric), ~sum(., na.rm = TRUE)), 
-                           .groups = "drop"),
+                aggregate_expenses_functional(data_map$expenses_functional),
                 "expenses_functional")
     
     data_update("data/debts.csv", 
