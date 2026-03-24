@@ -54,6 +54,7 @@ jobs:
           git add data/parquet/*
           if git diff --staged --quiet; then
             echo "No changes to commit"
+            echo "DATA_CHANGED=false" >> $GITHUB_ENV
           else
             git commit -m "Data updated"
 
@@ -63,5 +64,14 @@ jobs:
 
             # 3) Push our rebased commit to main
             git push origin main
+            echo "DATA_CHANGED=true" >> $GITHUB_ENV
           fi
+
+      - name: Trigger dashboard rebuild
+        if: env.DATA_CHANGED == 'true'
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.DASHBOARD_DISPATCH_TOKEN }}
+          repository: atsokol/open-budget-dashboard
+          event-type: data-updated
 

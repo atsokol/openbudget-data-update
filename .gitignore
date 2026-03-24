@@ -4,4 +4,5 @@
 .DS_Store
 .data/duplicates
 inputs/misc/
-data/*.csv
+data/csv/
+DATA_ISSUE.md

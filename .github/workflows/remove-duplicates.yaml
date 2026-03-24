@@ -43,11 +43,25 @@ jobs:
 
           # 1) Commit whatever the R script changed
           git add data/parquet/*
-          git commit -m "Data updated" || echo "No changes to commit"
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+            echo "DATA_CHANGED=false" >> $GITHUB_ENV
+          else
+            git commit -m "Data updated"
 
-          # 2) Make sure we're up to date with remote main
-          git fetch origin main
-          git pull --rebase origin main
+            # 2) Make sure we're up to date with remote main
+            git fetch origin main
+            git pull --rebase origin main
 
-          # 3) Push our rebased commit to main
-          git push origin main || echo "No changes to push"
+            # 3) Push our rebased commit to main
+            git push origin main
+            echo "DATA_CHANGED=true" >> $GITHUB_ENV
+          fi
+
+      - name: Trigger dashboard rebuild
+        if: env.DATA_CHANGED == 'true'
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.DASHBOARD_DISPATCH_TOKEN }}
+          repository: atsokol/open-budget-dashboard
+          event-type: data-updated
