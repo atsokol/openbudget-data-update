@@ -191,6 +191,10 @@ if (length(missing_codes) > 0) {
     add_missing_data("data/expenses_functional.csv",
                      aggregate_expenses_functional(missing_data_map$expenses_functional),
                      "expenses_functional")
+
+    add_missing_data("data/expenses_functional_economic.csv",
+                     disaggregate_expenses_functional(missing_data_map$expenses_functional),
+                     "expenses_functional_economic")
     
     add_missing_data("data/debts.csv", 
                      missing_data_map$debts |> distinct(), 
@@ -326,6 +330,10 @@ if (current_year == latest_year && current_month == latest_month) {
     data_update("data/expenses_functional.csv",
                 aggregate_expenses_functional(data_map$expenses_functional),
                 "expenses_functional")
+
+    data_update("data/expenses_functional_economic.csv",
+                disaggregate_expenses_functional(data_map$expenses_functional),
+                "expenses_functional_economic")
     
     data_update("data/debts.csv", 
                 data_map$debts |> distinct(), 

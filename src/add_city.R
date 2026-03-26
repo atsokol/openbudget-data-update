@@ -73,7 +73,7 @@ for (i in seq_len(nrow(cities_to_update))) {
 
 # Collect new rows across all cities, one data frame per dataset type
 all_new <- list(credits = NULL, expenses = NULL, expenses_functional = NULL,
-                debts = NULL, incomes = NULL)
+                expenses_functional_economic = NULL, debts = NULL, incomes = NULL)
 
 for (i in seq_len(nrow(cities_to_update))) {
   cty           <- cities_to_update$city[[i]]
@@ -123,19 +123,22 @@ for (i in seq_len(nrow(cities_to_update))) {
       resolve_code_conflicts(current_code)
   }
 
-  # expenses_functional: keep only aggregate EK rows before join
-  ef_new <- NULL
+  ef_new     <- NULL
+  ef_eco_new <- NULL
   if (!is.null(data_map$expenses_functional) && nrow(data_map$expenses_functional) > 0) {
-    ef_new <- aggregate_expenses_functional(data_map$expenses_functional) |>
+    ef_new     <- aggregate_expenses_functional(data_map$expenses_functional) |>
+      join_and_resolve()
+    ef_eco_new <- disaggregate_expenses_functional(data_map$expenses_functional) |>
       join_and_resolve()
   }
 
   city_new <- list(
-    credits              = join_and_resolve(data_map$credits |> distinct()),
-    expenses             = join_and_resolve(data_map$expenses |> distinct()),
-    expenses_functional  = ef_new,
-    debts                = join_and_resolve(data_map$debts |> distinct()),
-    incomes              = join_and_resolve(data_map$incomes |> distinct())
+    credits                      = join_and_resolve(data_map$credits |> distinct()),
+    expenses                     = join_and_resolve(data_map$expenses |> distinct()),
+    expenses_functional          = ef_new,
+    expenses_functional_economic = ef_eco_new,
+    debts                        = join_and_resolve(data_map$debts |> distinct()),
+    incomes                      = join_and_resolve(data_map$incomes |> distinct())
   )
 
   for (nm in names(all_new)) {
@@ -194,11 +197,12 @@ append_data <- function(file, new_data, description) {
   ))
 }
 
-append_data("data/credits.csv",             all_new$credits,             "credits")
-append_data("data/expenses.csv",            all_new$expenses,            "expenses")
-append_data("data/expenses_functional.csv", all_new$expenses_functional, "expenses_functional")
-append_data("data/debts.csv",               all_new$debts,               "debts")
-append_data("data/incomes.csv",             all_new$incomes,             "incomes")
+append_data("data/credits.csv",                          all_new$credits,                      "credits")
+append_data("data/expenses.csv",                         all_new$expenses,                     "expenses")
+append_data("data/expenses_functional.csv",              all_new$expenses_functional,          "expenses_functional")
+append_data("data/expenses_functional_economic.csv",     all_new$expenses_functional_economic, "expenses_functional_economic")
+append_data("data/debts.csv",                            all_new$debts,                        "debts")
+append_data("data/incomes.csv",                          all_new$incomes,                      "incomes")
 
 # ── Post-update coverage check ──────────────────────────────────────────────────
 # Warn if any city still has missing years — may indicate historical codes were

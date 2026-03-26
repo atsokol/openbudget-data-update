@@ -54,7 +54,7 @@ call_api <- function(api_path, col_types, max_retries = 3) {
     }
 
     result <- tryCatch({
-      response <- GET(api_path, timeout(30))
+      response <- GET(api_path, timeout(120))
       status   <- status_code(response)
 
       if (status == 429) stop("rate_limited_429")

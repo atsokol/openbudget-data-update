@@ -81,20 +81,25 @@ resolve_code_conflicts <- function(new_data, current_code) {
 # ── Aggregation ────────────────────────────────────────────────────────────────
 
 # Aggregate raw PROGRAM-classification API data to one row per
-# (period, fund_type, budget_code, FK, PK).
+# (period, fund_type, budget_code, FK, PK) — no economic breakdown.
 #
-# The API returns rows at the (PK, FK, EK) level — each program × functional
-# code combination is broken down by economic classification (COD_CONS_EK).
-# It also includes an aggregate row with COD_CONS_EK == 0 that already sums
-# all detail EK rows.  Summing across all EK values (as the old code did)
-# double-counts every amount.
-#
-# Fix: keep only the aggregate EK == 0 rows, then drop the now-constant
-# EK columns.
+# The API returns rows at the (PK, FK, EK) level. It also includes an aggregate
+# row with COD_CONS_EK == 0 that already sums all detail EK rows.
+# Keep only those aggregate rows and drop the now-constant EK columns.
+# → output file: expenses_functional.parquet
 aggregate_expenses_functional <- function(df) {
   df |>
     dplyr::filter(COD_CONS_EK == 0) |>
     dplyr::select(-COD_CONS_EK, -COD_CONS_EK_NAME) |>
+    dplyr::distinct()
+}
+
+# Keep the EK breakdown rows (COD_CONS_EK != 0) for full economic detail.
+# Drops the aggregate row (COD_CONS_EK == 0) to avoid double-counting.
+# → output file: expenses_functional_economic.parquet
+disaggregate_expenses_functional <- function(df) {
+  df |>
+    dplyr::filter(COD_CONS_EK != 0) |>
     dplyr::distinct()
 }
 
